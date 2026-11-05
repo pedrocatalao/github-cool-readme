@@ -150,6 +150,38 @@ trap 'rm -rf "$WORK"' EXIT
 gh repo clone "$PROFILE" "$WORK/repo" -- --quiet --depth 1
 cd "$WORK/repo"
 
+if [ -f "$CONFIG" ]; then
+  info "Keeping your $CONFIG"
+  if grep -Eq '^style:[[:space:]]*oled' "$CONFIG" && [ -z "${COOL_README_REF:-}" ]; then
+    REF=main
+    warn "Your $CONFIG uses OLED cards, which are not in the v1 release yet, so the workflow will use the action from main."
+  fi
+else
+  private=true; orgs=true
+  ask "Count work in private repos? (only totals appear on the cards)" y || private=false
+  ask "Count work in your organizations' repos?" y || orgs=false
+  style=classic
+  ask "Use the pinball-style OLED cards instead of the classic ones?" n && style=oled
+  # The default (v1) release predates the OLED cards and rejects the "style" setting,
+  # so classic cards leave it out, and OLED cards need the action from main.
+  style_line=""
+  if [ "$style" = oled ]; then
+    style_line="style: oled"
+    if [ -z "${COOL_README_REF:-}" ]; then
+      REF=main
+      warn "OLED cards are not in the v1 release yet, so the workflow will use the action from main."
+    fi
+  fi
+  cat > "$CONFIG" <<EOF
+# Settings: https://github.com/$TOOL_REPO#settings
+user: $LOGIN
+${style_line:+$style_line
+}include:
+  private: $private
+  orgs: $orgs
+EOF
+  info "Adding $CONFIG"
+fi
 wanted="$(mktemp)"
 gh api "repos/$TOOL_REPO/contents/examples/profile-workflow.yml?ref=$REF" -H "Accept: application/vnd.github.raw" \
   | sed "s#$TOOL_REPO@[A-Za-z0-9._-]*#$TOOL_REPO@$REF#" > "$wanted"
@@ -163,24 +195,6 @@ else
   info "$WORKFLOW is up to date"
 fi
 
-if [ -f "$CONFIG" ]; then
-  info "Keeping your $CONFIG"
-else
-  private=true; orgs=true
-  ask "Count work in private repos? (only totals appear on the cards)" y || private=false
-  ask "Count work in your organizations' repos?" y || orgs=false
-  style=classic
-  ask "Use the pinball-style OLED cards instead of the classic ones?" n && style=oled
-  cat > "$CONFIG" <<EOF
-# Settings: https://github.com/$TOOL_REPO#settings
-user: $LOGIN
-style: $style
-include:
-  private: $private
-  orgs: $orgs
-EOF
-  info "Adding $CONFIG"
-fi
 # OLED cards are all one size, shown 400 wide; classic ones are a wide and a narrow card per row.
 if grep -Eq '^style:[[:space:]]*oled' "$CONFIG" 2>/dev/null; then WIDE=400; NARROW=400; else WIDE=450; NARROW=350; fi
 
